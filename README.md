@@ -1,6 +1,6 @@
-# Lista de Perros 🐶 — Equipo 7
+﻿# Lista de Perros 🐶 — Equipo 7
 
-![CI/CD](https://github.com/samsanchez-ctrl/listadeperros_equipo7/actions/workflows/ci.yml/badge.svg)
+![CI/CD](https://github.com/vixhin/listadeperros_equipo7/actions/workflows/ci.yml/badge.svg)
 
 Aplicación web que muestra imágenes aleatorias de perros obtenidas desde la API pública [dog.ceo](https://dog.ceo/dog-api/) y permite al usuario reaccionar con "me gusta" o "no me gusta". Incluye contador de reacciones, porcentaje de aprobación e historial de razas vistas.
 
@@ -310,6 +310,7 @@ Archivo versionado: `monitoring/grafana/dashboards/listadeperros.json` (Grafana 
 | 5 · Staging | Mide el **tiempo de despliegue** | `ci_despliegue_duracion_segundos` |
 | 6 · **Observabilidad** *(nueva)* | Levanta app + monitoreo, envía las métricas del pipeline al Pushgateway, genera tráfico, **verifica** que métricas, logs y alertas existan y **toma una captura del dashboard** | — |
 | 7 · Producción | Instala **kube-prometheus-stack** en el cluster, aplica `ServiceMonitor` y `PrometheusRule`, y **verifica** que Prometheus monitorea las 3 réplicas | Tiempo de despliegue en Kubernetes (resumen) |
+| 8 · Publicación | Publica la imagen en GHCR tras los controles | SHA y trazabilidad de la imagen |
 
 **Evidencias que deja cada ejecución** (pestaña *Actions → ejecución → Artifacts*):
 - `observabilidad-<sha>`: captura del dashboard (`dashboard-grafana.png`), targets y alertas de Prometheus, logs de error de Loki y las métricas enviadas.
@@ -377,9 +378,15 @@ Con esto, GitHub no permite mergear un cambio que no pasó los controles.
 
 Evidencia real previa (EP2): Trivy detectó **47 vulnerabilidades HIGH** en la imagen base y el pipeline se detuvo hasta corregirlas.
 
-### ☁️ Entorno de ejecución
+### ☁️ Entornos de ejecución (EP3)
 
-El entorno productivo es un **cluster Kubernetes (kind) creado en cada ejecución sobre los runners en la nube de GitHub Actions**, con el monitoreo instalado automáticamente por el pipeline. Es un entorno cloud simulado: se crea, se despliega, se verifica y se destruye en cada ejecución, por lo que sus métricas quedan registradas en el resumen y los artefactos de cada ejecución.
+- **GitHub Actions:** Kubernetes con kind efímero para validar automáticamente el despliegue y Prometheus Operator.
+- **AWS EC2:** instancia Ubuntu con K3s, tres réplicas, Service, HPA (3–10), PDB (mínimo 2) e Ingress Traefik. La imagen de GHCR se desplegó manualmente mediante manifiestos y Helm.
+- **Observabilidad AWS:** Prometheus, Grafana, Loki, Alloy, Blackbox Exporter y Pushgateway. Las métricas de la ejecución #9 se transfirieron manualmente desde los artefactos a Pushgateway; no existe evidencia de automatización del despliegue hacia EC2.
+- **Persistencia:** Loki conserva registros mediante PVC y retención configurada de siete días; Pushgateway recuperó 18 series idénticas tras reiniciar. Se versionaron valores de persistencia de Prometheus y se respaldaron bloques históricos. El almacenamiento local no proporciona alta disponibilidad entre nodos.
+- **Acceso:** HTTP a la IP pública vigente de EC2; Grafana y Prometheus mediante túnel SSH y port-forward. No publicar credenciales ni claves privadas.
+
+Consultar [instrucciones de AWS](k8s/aws/README.md) para los manifiestos y pasos de instalación. La ejecución #9 (commit `df66bcb`) terminó en 7 min 27 s, con diez artefactos, 18 pruebas aprobadas, cobertura del 100 % y 13 políticas aprobadas. La disponibilidad del 100 % corresponde únicamente al intervalo observado.
 
 ---
 
@@ -396,6 +403,7 @@ listadeperros_equipo7/
 │   ├── service.yaml
 │   ├── hpa.yaml
 │   └── pdb.yaml
+├── k8s/aws/                      ← Configuración y documentación de AWS/K3s
 ├── k8s/monitoring/               ← ServiceMonitor, alertas y valores de kube-prometheus-stack
 ├── monitoring/                   ← Prometheus, Grafana (dashboard), Loki, Alloy y scripts
 ├── scripts/                      ← Auditoría de cumplimiento y gate de Trivy
@@ -437,22 +445,22 @@ La base de la app venía con fallos de fábrica. Trivy nos frenó todo y aprendi
 
 ## 🧠 Decisiones técnicas EP3
 
-> ✍️ **Completar por el equipo (sin IA, según la pauta).** Una o dos frases por punto.
+> Propuestas de justificación técnica con apoyo de IA autorizado por el profesor; revisar y validar por el equipo.
 
 **¿Por qué Prometheus + Grafana + Loki y no AWS CloudWatch?**
-[por qué]
+Permiten integrar métricas y registros con Kubernetes y reproducir el monitoreo localmente sin depender de un servicio específico de AWS.
 
 **¿Qué métricas elegimos para el dashboard y qué decisión permite tomar cada una?**
-[por qué]
+Disponibilidad y latencia permiten evaluar salud; CPU y memoria orientan el escalado; errores ayudan al diagnóstico; cobertura, vulnerabilidades y políticas permiten evaluar el despliegue.
 
 **¿Por qué el pipeline se detiene si la app no se puede monitorear?**
-[por qué]
+Sin métricas ni registros no podemos comprobar el comportamiento del servicio ni diagnosticar incidentes de manera fiable.
 
 **¿Por qué estas políticas de cumplimiento y estas normas (CIS, OWASP, ISO 27001)?**
-[por qué]
+CIS, OWASP e ISO aportan referencias para controles de privilegios, trazabilidad, seguridad y documentación; la auditoría no constituye una certificación.
 
 **¿Qué haríamos distinto en un entorno productivo real?**
-[por qué]
+Automatizaríamos el despliegue a EC2 y la transferencia de métricas, habilitaríamos TLS y notificaciones externas, y usaríamos almacenamiento redundante y varios nodos.
 
 ---
 
@@ -460,7 +468,6 @@ La base de la app venía con fallos de fábrica. Trivy nos frenó todo y aprendi
 
 - **Integrante 1** — Freddy Muñoz
 - **Integrante 2** — Vicente Maulén
-- **Integrante 3** — Samuel Sánchez
 
 ---
 
@@ -506,25 +513,16 @@ La base de la app venía con fallos de fábrica. Trivy nos frenó todo y aprendi
 
 **Mi aporte al proyecto:** Me encargué de correr los escaneos de seguridad y solucionar los fallos que iban saliendo.
 
-### Samuel Sánchez
-
-**¿Qué aprendí?** Aprendí a configurar el pipeline para automatizar las pruebas y a usar Kubernetes para subir la app.
-
-**¿Qué me costó más?** Que el pipeline pasara completo sin fallar en las pruebas o en el despliegue. Lo solucioné revisando los fallos que tiraba el flujo y haciendo ajustes con el grupo.
-
-**Mi aporte al proyecto:** Subí el código, configuré la automatización del pipeline y la parte de Kubernetes.
 
 ---
 
 ## 🤖 Uso de Inteligencia Artificial
 
-> ✍️ **Revisen y ajusten este texto para que refleje exactamente cómo usaron la IA.**
+
 
 Se utilizó **Claude (Anthropic)** como herramienta de apoyo para:
-- EP1: estructurar el README, diseñar el workflow inicial y verificar la sintaxis del script de configuración.
-- EP2: proponer la estructura del pipeline de GitHub Actions, el Dockerfile multi-stage, los manifiestos de Kubernetes, la configuración de Docker Compose y ejemplos de pruebas con Jest.
-- EP3: proponer la configuración del stack de monitoreo (Prometheus, Grafana, Loki, Alloy y exporters), el dashboard, los scripts de auditoría y de verificación de observabilidad, y la extensión del pipeline.
+Proponer la estructura del pipeline de GitHub Actions, el Dockerfile multi-stage, los manifiestos de Kubernetes, la configuración de Docker Compose y ejemplos de pruebas con Jest.
+- EP3: proponer la configuración del stack de monitore y de verificación de observabilidad, y la extensión del pipeline.
 
-Todo el contenido generado fue revisado, ejecutado y validado por el equipo. Las decisiones técnicas, justificaciones, conclusiones y reflexiones individuales fueron escritas por los integrantes sin apoyo de IA.
-
+También se utilizó ChatGPT (OpenAI) en EP3 para orientar el despliegue AWS y diagnosticar errores
 > Referencia de citación IA: https://bibliotecas.duoc.cl/ia
